@@ -58,6 +58,28 @@ dando 30 días *en local*, pero el primer arranque con internet los corrige.
 comprobación. Eso no tiene solución real en software instalado, en ningún
 programa. Ver "Hasta dónde llega esto" más abajo.
 
+## Cuántas computadoras puede usar una iglesia
+
+Cada iglesia tiene un número de `equipos_permitidos` (1 por defecto, editable
+desde su ficha en el panel). Los equipos van tomando las licencias libres solos
+al conectarse — la primera vez que preguntan, si hay cupo. Cuando ya no queda
+ninguna, el que llega tarde recibe una licencia firmada de verdad, pero con
+`estado: "otro_equipo"`: la app la valida, pero no proyecta con ella.
+
+Esto **no** toca el estado de cuenta de la iglesia en la base de datos —sigue
+"activo" para los equipos que sí tienen licencia— es una respuesta aparte,
+calculada en el momento, solo para quien preguntó de más.
+
+Desde el panel se puede:
+- **Subir el número** de computadoras — desbloquea al instante al equipo que
+  estaba esperando cupo, sin tocar nada en la app.
+- **Autorizar** un equipo a mano (respeta el número: si ya está lleno, no deja).
+- **Dar de baja** un equipo — libera su licencia para otro, y ese equipo queda
+  bloqueado *a propósito*: no la vuelve a tomar solo en su próximo arranque.
+
+Bajar el número no desconecta a nadie de callado: si quedan más equipos activos
+que licencias, el panel lo muestra y hay que elegir a mano cuál se queda.
+
 ## Puesta en marcha (desarrollo)
 
 ```bash
@@ -86,9 +108,10 @@ $env:LAMPARA_ADMIN_CLAVE_HASH='scrypt$...'; npm start
 npm run probar
 ```
 
-34 comprobaciones: levanta el portal de verdad sobre una base temporal y lo
+51 comprobaciones: levanta el portal de verdad sobre una base temporal y lo
 interroga por HTTP. Cubre la firma, los dos relojes, la prueba anclada por
-equipo, el límite de peticiones, el CSRF y el escapado del HTML.
+equipo, cuántas computadoras puede usar cada iglesia, el límite de peticiones,
+el CSRF y el escapado del HTML.
 
 Una de ellas comprueba que el nombre del formato siga coincidiendo con el de
 `app/lib/licencia.js` en el repo de la app. Ese contrato vive en dos repos y
@@ -155,7 +178,7 @@ Conviene tenerlo claro para no vender lo que no es:
 | Borrar `licencia.json` | Sí. La app recuerda que estuvo licenciada y queda bloqueada. |
 | Borrar `%APPDATA%\Lampara` entero para reiniciar la prueba | Sí, en cuanto haya internet: el portal recuerda el equipo. |
 | Editar el archivo de licencia (fechas, estado) | Sí. La firma Ed25519 no cuadra. |
-| Copiar la licencia de una iglesia a otro equipo | Se ve en el panel: aparecen dos equipos en su ficha. No se corta solo — que una iglesia cambie de computadora un sábado no puede dejarla sin culto el domingo. |
+| Copiar la licencia de una iglesia a otro equipo | Sí, si ya usa todas sus computadoras permitidas: el equipo de más recibe una licencia que no proyecta. Se ve en el panel, y subir el número o autorizarlo a mano lo resuelve en el momento. |
 | Adivinar el identificador de otra iglesia | El identificador lleva seis hexadecimales aleatorios y hay límite de peticiones. |
 | **Editar el código de la app** | **No.** Ese código corre en la máquina de quien lo edita y puede quitar la comprobación entera. No hay defensa real; solo encarecerlo. |
 

@@ -279,11 +279,86 @@ async function principal() {
   anotar('la ficha de la iglesia registra su equipo', registrados.length === 1 && registrados[0].version_app === '0.1.0');
 
   anotar(
-    'un equipo desconocido queda anotado sin cortarle el servicio',
-    db.historial(iglesia.id).some((e) => e.tipo === 'equipo_nuevo')
+    'el primer equipo de una iglesia toma una licencia libre solo',
+    db.historial(iglesia.id).some((e) => e.tipo === 'equipo_autorizado') && db.equiposAutorizados(iglesia.id) === 1
   );
 
-  // --- 12. Descarga manual desde el panel -----------------------------------
+  // --- 12. Cuántas computadoras puede usar una iglesia -----------------------
+  const otra = db.crearIglesia({ nombre: 'Iglesia de un equipo' });
+  db.renovar(otra.id, 6);
+
+  const HUELLA_A = crypto.createHash('sha256').update('equipo-a').digest('hex');
+  const HUELLA_B = crypto.createHash('sha256').update('equipo-b').digest('hex');
+  const licenciaDe = async (huella) =>
+    licencias.verificar(await (await fetch(base + '/licencias/' + otra.id + (huella ? '?equipo=' + huella : ''))).text());
+
+  anotar('una iglesia nace con una sola computadora permitida', db.iglesia(otra.id).equipos_permitidos === 1);
+
+  anotar('el primer equipo toma la licencia libre y proyecta', (await licenciaDe(HUELLA_A)).datos.estado === 'activo');
+  anotar('el mismo equipo puede volver a preguntar sin problema', (await licenciaDe(HUELLA_A)).datos.estado === 'activo');
+
+  const segundo = await licenciaDe(HUELLA_B);
+  // La firma sigue siendo válida: es una licencia real, solo que bloquea.
+  anotar('con las licencias ocupadas, el siguiente equipo queda bloqueado', segundo.datos.estado === 'otro_equipo' && segundo.valido);
+  anotar('la cuenta sigue activa para los equipos que sí tienen licencia', db.iglesia(otra.id).estado === 'activo');
+  anotar('queda anotado en el historial', db.historial(otra.id).some((e) => e.tipo === 'equipo_rechazado'));
+
+  // Sin huella (una app anterior a esto) se sigue sirviendo la licencia normal.
+  anotar('sin huella, sigue sirviendo la licencia normal', (await licenciaDe(null)).datos.estado === 'activo');
+
+  // --- El panel manda -------------------------------------------------------
+  const fichaOtra = await (await fetch(base + '/admin/iglesias/' + otra.id, { headers: conSesion })).text();
+  const csrfOtra = (fichaOtra.match(/name="csrf" value="([^"]+)"/) || [])[1];
+  const enviarPanel = (accion, cuerpo) =>
+    fetch(base + '/admin/iglesias/' + otra.id + '/' + accion, {
+      method: 'POST',
+      headers: { ...cabecerasForm, ...conSesion },
+      body: new URLSearchParams({ ...cuerpo, csrf: csrfOtra }).toString(),
+      redirect: 'manual',
+    });
+
+  // Autorizar a mano con todo ocupado no se salta el número: si no, el número
+  // dejaría de querer decir nada.
+  const lleno = await enviarPanel('autorizar-equipo', { huella: HUELLA_B });
+  anotar(
+    'no deja autorizar a mano si ya no quedan licencias',
+    lleno.status === 200 && (await lleno.text()).includes('Ya están ocupadas') && (await licenciaDe(HUELLA_B)).datos.estado === 'otro_equipo'
+  );
+
+  // Subir el número desde el panel es lo que lo desbloquea.
+  const subir = await enviarPanel('licencias', { equipos: '2' });
+  anotar('el panel cambia cuántas computadoras puede usar', subir.status === 302 && db.iglesia(otra.id).equipos_permitidos === 2);
+  anotar('con una licencia más, el segundo equipo ya proyecta', (await licenciaDe(HUELLA_B)).datos.estado === 'activo');
+  anotar('y ahora hay dos equipos con licencia', db.equiposAutorizados(otra.id) === 2);
+
+  // Dar de baja libera la licencia sin tocar la cuenta.
+  const baja = await enviarPanel('revocar-equipo', { huella: HUELLA_A });
+  anotar('dar de baja un equipo lo bloquea', baja.status === 302 && (await licenciaDe(HUELLA_A)).datos.estado === 'otro_equipo');
+  anotar('el otro equipo sigue funcionando', (await licenciaDe(HUELLA_B)).datos.estado === 'activo');
+
+  // Y no se recupera solo aprovechando que quedó una libre: darlo de baja
+  // tiene que significar algo más que "esperá al próximo arranque".
+  anotar(
+    'un equipo dado de baja no vuelve a tomar una licencia libre por su cuenta',
+    db.equiposAutorizados(otra.id) === 1 && (await licenciaDe(HUELLA_A)).datos.estado === 'otro_equipo'
+  );
+
+  // Volver a autorizarlo desde el panel sí lo levanta.
+  await enviarPanel('autorizar-equipo', { huella: HUELLA_A });
+  anotar('autorizarlo de nuevo desde el panel lo levanta', (await licenciaDe(HUELLA_A)).datos.estado === 'activo');
+  await enviarPanel('revocar-equipo', { huella: HUELLA_A });
+
+  // Bajar el número no desconecta a nadie de callado: se ve el exceso y se
+  // decide a mano cuál se queda.
+  await enviarPanel('licencias', { equipos: '1' });
+  anotar(
+    'bajar el número no desautoriza a nadie por su cuenta',
+    db.iglesia(otra.id).equipos_permitidos === 1 && (await licenciaDe(HUELLA_B)).datos.estado === 'activo'
+  );
+
+  anotar('el número no puede quedar en cero ni en negativo', db.cambiarEquiposPermitidos(otra.id, 0) === 1);
+
+  // --- 13. Descarga manual desde el panel -----------------------------------
   const manual = await fetch(base + '/admin/iglesias/' + iglesia.id + '/licencia.json', { headers: conSesion });
   anotar(
     'el panel entrega el archivo para enviarlo a mano',

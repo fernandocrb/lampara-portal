@@ -17,8 +17,16 @@ const crypto = require('crypto');
 
 const FORMATO = 'lampara-licencia-1';
 
-/** Los estados que entiende la app. Cualquier otro la deja sin proyectar. */
+/** Los estados de cuenta: los que se pueden poner a mano desde el panel. */
 const ESTADOS = ['activo', 'moroso', 'suspendido'];
+
+/**
+ * Estados que decide el propio servidor al emitir, no una persona en el panel.
+ * `otro_equipo` es el único hoy: no es que la cuenta esté mal, es que quien
+ * pregunta no es el equipo autorizado. Por eso vive aparte de `ESTADOS` — no
+ * tiene sentido que apareciera como botón para marcarlo a mano.
+ */
+const ESTADOS_DINAMICOS = ['otro_equipo'];
 
 const MS_DIA = 24 * 60 * 60 * 1000;
 
@@ -112,7 +120,7 @@ function calcularValidoHasta(vigenteHasta, ahora = Date.now()) {
  */
 function emitir({ clienteId, nombreCliente, estado = 'activo', plan = 'completo', vigenteHasta, diasPrueba, ahora = Date.now() }) {
   if (!clienteId) throw new Error('Falta el identificador del cliente.');
-  if (!ESTADOS.includes(estado)) throw new Error('Estado desconocido: ' + estado);
+  if (!ESTADOS.includes(estado) && !ESTADOS_DINAMICOS.includes(estado)) throw new Error('Estado desconocido: ' + estado);
 
   const datos = {
     clienteId,
@@ -149,6 +157,7 @@ function verificar(texto, pemPublica) {
 module.exports = {
   FORMATO,
   ESTADOS,
+  ESTADOS_DINAMICOS,
   DIAS_GRACIA,
   CLIENTE_PRUEBA,
   DIAS_PRUEBA,

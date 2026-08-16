@@ -20,7 +20,28 @@ function abrir(ruta) {
   db.exec('PRAGMA journal_mode = WAL');
   db.exec('PRAGMA foreign_keys = ON');
   crearEsquema();
+  migrar();
   return db;
+}
+
+/**
+ * Agrega al vuelo las columnas que falten.
+ *
+ * `CREATE TABLE IF NOT EXISTS` no toca una tabla que ya existe, así que sin
+ * esto una columna nueva solo aparecería en bases recién creadas — funcionaría
+ * en las pruebas y fallaría en el servidor, que es donde están los datos de
+ * verdad.
+ */
+function migrar() {
+  const columnas = (tabla) => db.prepare('SELECT name FROM pragma_table_info(?)').all(tabla).map((c) => c.name);
+
+  const agregar = (tabla, columna, definicion) => {
+    if (!columnas(tabla).includes(columna)) db.exec(`ALTER TABLE ${tabla} ADD COLUMN ${columna} ${definicion}`);
+  };
+
+  agregar('iglesias', 'equipos_permitidos', 'INTEGER NOT NULL DEFAULT 1');
+  agregar('equipos', 'autorizado', 'INTEGER NOT NULL DEFAULT 0');
+  agregar('equipos', 'bloqueado', 'INTEGER NOT NULL DEFAULT 0');
 }
 
 function cerrar() {
@@ -45,7 +66,11 @@ function crearEsquema() {
       actualizada_en    TEXT NOT NULL,
       ultima_revision_en TEXT,
       ultima_ip         TEXT,
-      revisiones        INTEGER NOT NULL DEFAULT 0
+      revisiones        INTEGER NOT NULL DEFAULT 0,
+      -- Cuántas computadoras puede usar esta iglesia a la vez. Una por
+      -- defecto; se cambia desde el panel cuando una iglesia grande proyecta
+      -- desde dos cabinas, o cuando se vende un plan con más equipos.
+      equipos_permitidos INTEGER NOT NULL DEFAULT 1
     );
 
     -- Qué equipos ha visto el portal. Es lo que permite desmentir a una
@@ -58,7 +83,15 @@ function crearEsquema() {
       ultima_vez    TEXT NOT NULL,
       revisiones    INTEGER NOT NULL DEFAULT 0,
       version_app   TEXT DEFAULT '',
-      ultima_ip     TEXT DEFAULT ''
+      ultima_ip     TEXT DEFAULT '',
+      -- Si este equipo ocupa una de las licencias de su iglesia. Se marca solo
+      -- mientras queden libres; después hay que decidirlo en el panel.
+      autorizado    INTEGER NOT NULL DEFAULT 0,
+      -- Dado de baja a propósito desde el panel. Va aparte de autorizado
+      -- porque son cosas distintas: un equipo sin licencia todavía puede tomar
+      -- una libre al conectarse, y uno dado de baja no — si no, darlo de baja
+      -- no serviría de nada, volvería a tomarla en el siguiente arranque.
+      bloqueado     INTEGER NOT NULL DEFAULT 0
     );
 
     CREATE INDEX IF NOT EXISTS idx_equipos_cliente ON equipos (cliente_id);
@@ -237,6 +270,55 @@ function equiposDe(clienteId) {
   return db.prepare('SELECT * FROM equipos WHERE cliente_id = ? ORDER BY ultima_vez DESC').all(clienteId);
 }
 
+/** Cuántas de las licencias de una iglesia están ocupadas ahora mismo. */
+function equiposAutorizados(clienteId) {
+  return db.prepare('SELECT COUNT(*) AS n FROM equipos WHERE cliente_id = ? AND autorizado = 1').get(clienteId).n;
+}
+
+/**
+ * Le da a un equipo una de las licencias de su iglesia.
+ *
+ * Se usa en dos momentos distintos: solo, cuando un equipo pide licencia y aún
+ * quedan libres; y desde el panel, cuando una persona decide que la
+ * computadora cambió. El efecto es el mismo, solo cambia quién lo pidió.
+ */
+function autorizarEquipo(clienteId, huella, { automatico = false } = {}) {
+  // Autorizar también levanta la baja: es la forma de volver a habilitar un
+  // equipo que se dio de baja por error.
+  db.prepare('UPDATE equipos SET autorizado = 1, bloqueado = 0 WHERE huella = ? AND cliente_id = ?').run(huella, clienteId);
+  anotar(
+    clienteId,
+    'equipo_autorizado',
+    huella.slice(0, 12) + '…' + (automatico ? ' (tomó una licencia libre al conectarse)' : ' (autorizado desde el panel)')
+  );
+}
+
+/**
+ * Le quita la licencia a un equipo, dejándola libre para otro.
+ *
+ * Queda bloqueado, no meramente sin licencia: si solo se le quitara la marca,
+ * volvería a tomar la primera libre en su siguiente arranque y darlo de baja no
+ * habría servido de nada.
+ */
+function revocarEquipo(clienteId, huella) {
+  db.prepare('UPDATE equipos SET autorizado = 0, bloqueado = 1 WHERE huella = ? AND cliente_id = ?').run(huella, clienteId);
+  anotar(clienteId, 'equipo_revocado', huella.slice(0, 12) + '…');
+}
+
+/**
+ * Cambia cuántas computadoras puede usar la iglesia.
+ *
+ * Bajar el número no desautoriza a nadie por su cuenta: decidir cuál de las
+ * computadonas que ya están funcionando se queda sin servicio no es algo que
+ * deba pasar de callado. El panel muestra el exceso y se resuelve a mano.
+ */
+function cambiarEquiposPermitidos(clienteId, cantidad) {
+  const n = Math.max(1, Math.min(99, Math.floor(Number(cantidad) || 1)));
+  db.prepare('UPDATE iglesias SET equipos_permitidos = ?, actualizada_en = ? WHERE id = ?').run(n, ahora(), clienteId);
+  anotar(clienteId, 'licencias', 'Ahora tiene ' + n + (n === 1 ? ' equipo permitido' : ' equipos permitidos'));
+  return n;
+}
+
 // ---------------------------------------------------------------------------
 // Bitácora
 // ---------------------------------------------------------------------------
@@ -266,6 +348,10 @@ module.exports = {
   anotarRevision,
   registrarEquipo,
   equiposDe,
+  equiposAutorizados,
+  autorizarEquipo,
+  revocarEquipo,
+  cambiarEquiposPermitidos,
   anotar,
   historial,
 };

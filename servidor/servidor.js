@@ -215,15 +215,42 @@ function servirLicencia(req, res, clienteId, url) {
           vigenteHasta: null,
         }).texto;
   } else {
-    texto = licenciaDe(iglesia).texto;
-    db.anotarRevision(iglesia.id, ip);
-
-    // Un equipo nuevo en una iglesia que ya tenía los suyos no se bloquea: si
-    // cambiaron de computadora un sábado, cortarles el domingo por eso sería
-    // peor negocio que cobrarles de más. Queda anotado y se ve en su ficha.
-    if (anotado && !anotado.conocido) {
-      db.anotar(iglesia.id, 'equipo_nuevo', 'Se conectó un equipo que no se había visto antes');
+    // --- Cuántas computadoras puede usar esta iglesia -------------------------
+    // Los equipos van tomando las licencias libres al conectarse; cuando no
+    // quedan, el que llega tarde se bloquea. No se toca el estado de la cuenta
+    // en la base —eso sigue diciendo "activo" para los equipos que sí tienen
+    // licencia— se firma una respuesta aparte, solo para él, que la app
+    // entiende como bloqueo. Sin huella (una app anterior a esto) no hay nada
+    // que exigir: se sirve igual, como antes de que esto existiera.
+    let denegadoPorEquipo = false;
+    if (huella && anotado && !anotado.registro.autorizado) {
+      if (anotado.registro.bloqueado) {
+        // Dado de baja a propósito: no vuelve a tomar una licencia solo aunque
+        // haya libres. Para eso está el botón de autorizar en el panel.
+        denegadoPorEquipo = true;
+      } else if (db.equiposAutorizados(iglesia.id) < iglesia.equipos_permitidos) {
+        db.autorizarEquipo(iglesia.id, huella, { automatico: true });
+      } else {
+        denegadoPorEquipo = true;
+        db.anotar(
+          iglesia.id,
+          'equipo_rechazado',
+          'Un equipo más pidió licencia y ya están ocupadas las ' + iglesia.equipos_permitidos
+        );
+      }
     }
+
+    texto = denegadoPorEquipo
+      ? licencias.emitir({
+          clienteId: iglesia.id,
+          nombreCliente: iglesia.nombre,
+          estado: 'otro_equipo',
+          plan: iglesia.plan,
+          vigenteHasta: iglesia.vigente_hasta,
+        }).texto
+      : licenciaDe(iglesia).texto;
+
+    db.anotarRevision(iglesia.id, ip);
   }
 
   res.writeHead(200, {
@@ -357,6 +384,28 @@ async function manejarAdmin(req, res, ruta, url) {
       db.cambiarEstado(iglesia.id, datos.estado);
       return redirigir(res, '/admin/iglesias/' + iglesia.id + '?mensaje=estado');
     }
+    if (accion === 'licencias') {
+      const n = db.cambiarEquiposPermitidos(iglesia.id, datos.equipos);
+      return redirigir(res, '/admin/iglesias/' + iglesia.id + '?mensaje=licencias&n=' + n);
+    }
+    if (accion === 'autorizar-equipo' || accion === 'revocar-equipo') {
+      const huella = String(datos.huella || '').trim();
+      if (!huella) {
+        return responder(res, 400, pagina({ titulo: 'Equipo', sesion: ses, contenido: '<h1>Falta el equipo</h1>' }));
+      }
+      if (accion === 'revocar-equipo') {
+        db.revocarEquipo(iglesia.id, huella);
+        return redirigir(res, '/admin/iglesias/' + iglesia.id + '?mensaje=revocado');
+      }
+      // Autorizar a mano respeta el número de licencias en vez de saltárselo:
+      // si no, el número dejaría de querer decir nada y se acabaría vendiendo
+      // una licencia que en realidad son tres.
+      if (db.equiposAutorizados(iglesia.id) >= iglesia.equipos_permitidos) {
+        return responder(res, 200, admin.vistaDetalle(ses, iglesia, URL_PUBLICA, null, 'lleno'));
+      }
+      db.autorizarEquipo(iglesia.id, huella);
+      return redirigir(res, '/admin/iglesias/' + iglesia.id + '?mensaje=autorizado');
+    }
     if (accion === 'eliminar') {
       db.eliminarIglesia(iglesia.id);
       return redirigir(res, '/admin');
@@ -383,6 +432,9 @@ async function manejarAdmin(req, res, ruta, url) {
     renovada: 'Vigencia extendida.',
     estado: 'Estado de cuenta actualizado. La app lo verá la próxima vez que arranque.',
     guardada: 'Datos guardados.',
+    autorizado: 'Equipo autorizado. La próxima vez que abran Lámpara ahí, proyectará normal.',
+    revocado: 'Equipo dado de baja. Dejará de proyectar la próxima vez que se conecte, y su licencia queda libre para otro.',
+    licencias: 'Ahora esta iglesia puede usar ' + (url.searchParams.get('n') || '1') + ' computadora(s).',
   };
   return responder(res, 200, admin.vistaDetalle(ses, iglesia, URL_PUBLICA, mensajes[url.searchParams.get('mensaje')]));
 }

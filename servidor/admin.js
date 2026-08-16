@@ -88,6 +88,7 @@ function vistaLista(ses) {
         </td>
         <td><span class="etiqueta ${s.clase}">${escapar(s.texto)}</span></td>
         <td class="opcional">${escapar(fecha(i.vigente_hasta))}</td>
+        <td class="opcional">${escapar(db.equiposAutorizados(i.id))} / ${escapar(i.equipos_permitidos)}</td>
         <td class="opcional">${escapar(hace(i.ultima_revision_en))}</td>
       </tr>`;
     })
@@ -111,7 +112,8 @@ function vistaLista(ses) {
             ? `<table>
                  <tr>
                    <th>Iglesia</th><th>Estado</th>
-                   <th class="opcional">Vigente hasta</th><th class="opcional">Última conexión</th>
+                   <th class="opcional">Vigente hasta</th><th class="opcional">Equipos</th>
+                   <th class="opcional">Última conexión</th>
                  </tr>
                  ${filas}
                </table>`
@@ -191,32 +193,65 @@ function campos(i = {}) {
 /**
  * Los equipos que han pedido licencia con este cliente.
  *
- * Aquí es donde se ve si una iglesia instaló Lámpara en tres computadoras. No
- * se corta nada automáticamente —eso lo decide una persona mirando esto—, pero
- * deja de ser invisible.
+ * Lámpara admite un equipo autorizado por licencia — el primero que se conecta
+ * se queda con el cupo, solo. Si aparece otro, se anota aquí en vez de que la
+ * iglesia se quede adivinando por qué de repente no proyecta: basta con
+ * autorizar el correcto para que vuelva a andar.
  */
-function equipos(clienteId) {
-  const lista = db.equiposDe(clienteId);
+function equipos(ses, i, aviso) {
+  const lista = db.equiposDe(i.id);
+  const usadas = db.equiposAutorizados(i.id);
+  const permitidas = i.equipos_permitidos;
+
+  const control = `
+    <form method="post" action="/admin/iglesias/${escapar(i.id)}/licencias" class="acciones" style="margin-bottom:16px">
+      <input type="hidden" name="csrf" value="${escapar(ses.csrf)}">
+      <label style="margin:0">Computadoras permitidas
+        <input type="number" name="equipos" value="${escapar(permitidas)}" min="1" max="99" style="width:90px">
+      </label>
+      <button class="primario" type="submit" style="align-self:end">Guardar</button>
+      <span class="pista" style="align-self:end">
+        ${usadas} de ${permitidas} en uso${usadas > permitidas ? ' — hay más equipos activos que licencias' : ''}
+      </span>
+    </form>
+    ${aviso === 'lleno' ? `<div class="aviso-caja malo">Ya están ocupadas las ${permitidas} licencias. Sube el número o da de baja otro equipo antes de autorizar este.</div>` : ''}`;
+
   if (!lista.length) {
-    return '<p class="pista">Ningún equipo se ha conectado todavía. Aparecerán aquí en cuanto abran Lámpara con internet.</p>';
+    return control + '<p class="pista">Ningún equipo se ha conectado todavía. Aparecerán aquí en cuanto abran Lámpara con internet.</p>';
   }
 
   const filas = lista
-    .map(
-      (e) => `<tr>
+    .map((e) => {
+      const accion = e.autorizado ? 'revocar-equipo' : 'autorizar-equipo';
+      const marca = e.autorizado
+        ? { clase: 'ok', texto: 'Con licencia' }
+        : e.bloqueado
+          ? { clase: 'malo', texto: 'Dado de baja' }
+          : { clase: 'aviso', texto: 'Sin licencia' };
+      return `<tr>
         <td class="mono">${escapar(e.huella.slice(0, 12))}…</td>
-        <td>${escapar(fecha(e.primera_vez))}</td>
+        <td><span class="etiqueta ${marca.clase}">${escapar(marca.texto)}</span></td>
+        <td class="opcional">${escapar(fecha(e.primera_vez))}</td>
         <td>${escapar(hace(e.ultima_vez))}</td>
-        <td class="opcional">${escapar(e.revisiones)}</td>
-      </tr>`
-    )
+        <td>
+          <form method="post" action="/admin/iglesias/${escapar(i.id)}/${accion}" style="margin:0">
+            <input type="hidden" name="csrf" value="${escapar(ses.csrf)}">
+            <input type="hidden" name="huella" value="${escapar(e.huella)}">
+            <button type="submit"${e.autorizado ? ' class="peligro"' : ''}>${e.autorizado ? 'Dar de baja' : 'Autorizar'}</button>
+          </form>
+        </td>
+      </tr>`;
+    })
     .join('');
 
-  return `<table>
-      <tr><th>Equipo</th><th>Desde</th><th>Última vez</th><th class="opcional">Conexiones</th></tr>
+  return `${control}
+    <table>
+      <tr>
+        <th>Equipo</th><th>Estado</th>
+        <th class="opcional">Desde</th><th>Última vez</th><th></th>
+      </tr>
       ${filas}
-    </table>
-    ${lista.length > 1 ? `<p class="pista" style="margin-bottom:0">Hay ${lista.length} equipos usando esta licencia.</p>` : ''}`;
+    </table>`;
 }
 
 function vistaNueva(ses, error) {
@@ -238,7 +273,7 @@ function vistaNueva(ses, error) {
   });
 }
 
-function vistaDetalle(ses, i, urlPublica, mensaje) {
+function vistaDetalle(ses, i, urlPublica, mensaje, aviso) {
   const s = semaforo(i);
   const csrf = `<input type="hidden" name="csrf" value="${escapar(ses.csrf)}">`;
 
@@ -286,7 +321,7 @@ function vistaDetalle(ses, i, urlPublica, mensaje) {
 
       <div class="tarjeta">
         <h2 style="margin-top:0">Equipos</h2>
-        ${equipos(i.id)}
+        ${equipos(ses, i, aviso)}
       </div>
 
       <div class="tarjeta">
