@@ -1,0 +1,9 @@
+node_modules/
+
+# Los datos del portal y —sobre todo— la clave privada de firma. Si esto se
+# filtra, cualquiera puede emitir licencias válidas de Lámpara.
+datos/
+*.pem
+!clave-publica-ejemplo.pem
+
+.env

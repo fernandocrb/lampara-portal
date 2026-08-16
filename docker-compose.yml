@@ -1,0 +1,51 @@
+# Despliegue en el TrueNAS. Ver README.md para el paso a paso.
+#
+# El puerto NO se publica hacia la red de casa: lo alcanza el túnel de
+# Cloudflare, que corre en su propio contenedor y ve a este por nombre. Así el
+# portal no queda expuesto en la LAN ni depende de abrir nada en el router.
+
+services:
+  portal:
+    build: .
+    image: lampara-portal:latest
+    container_name: lampara-portal
+    restart: unless-stopped
+    environment:
+      # La dirección por la que llegan las iglesias. Se muestra en el panel para
+      # poder copiarla, y decide si la cookie de sesión se marca como Secure.
+      LAMPARA_URL_PUBLICA: ${LAMPARA_URL_PUBLICA:?falta la URL pública}
+      # El hash de la contraseña del panel — nunca la contraseña.
+      # Se genera con: npm run clave-admin
+      LAMPARA_ADMIN_CLAVE_HASH: ${LAMPARA_ADMIN_CLAVE_HASH:?falta el hash de la contraseña}
+      # Detrás del túnel, la IP real llega en una cabecera. Sin esto, todas las
+      # iglesias comparten IP y el límite de peticiones las castiga juntas.
+      LAMPARA_TRAS_PROXY: "si"
+    volumes:
+      # La clave privada de firma vive aquí. Este volumen es lo único que hay
+      # que respaldar, y lo único cuya pérdida no tiene arreglo: sin él, todas
+      # las licencias instaladas dejan de validar.
+      - lampara-datos:/datos
+    expose:
+      - "8099"
+    networks:
+      - lampara
+
+  # El túnel de Cloudflare. El token sale del panel de Cloudflare Zero Trust al
+  # crear el túnel; ahí mismo se apunta el nombre público a http://portal:8099.
+  tunel:
+    image: cloudflare/cloudflared:latest
+    container_name: lampara-tunel
+    restart: unless-stopped
+    command: tunnel --no-autoupdate run
+    environment:
+      TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN:?falta el token del túnel}
+    depends_on:
+      - portal
+    networks:
+      - lampara
+
+volumes:
+  lampara-datos:
+
+networks:
+  lampara:

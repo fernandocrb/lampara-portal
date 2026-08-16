@@ -1,0 +1,17 @@
+{
+  "name": "lampara-portal",
+  "version": "0.1.0",
+  "description": "Portal de licencias de Lámpara — emite y renueva los archivos firmados que valida la app (EducaPanama)",
+  "author": "EducaPanama",
+  "private": true,
+  "type": "commonjs",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "start": "node servidor/servidor.js",
+    "claves": "node herramientas/generar-claves.js",
+    "clave-admin": "node herramientas/clave-admin.js",
+    "probar": "node herramientas/probar-portal.js"
+  }
+}
