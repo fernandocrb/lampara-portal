@@ -144,13 +144,29 @@ NAS: es publicar la imagen en un registro y apuntar TrueNAS ahí.
 
 3. **Apuntar el túnel.** El NAS ya tiene la app `cloudflared` corriendo (la
    misma que usa OpenClaw) con un *tunnel token* — el mapeo de hostnames no se
-   toca ahí, se administra en Cloudflare Zero Trust → Networks → Tunnels →
-   [el túnel] → Public Hostnames: agregar `licencias.educapanama.net` →
-   `http://<nombre-o-IP-del-contenedor-portal>:8099`.
+   toca en TrueNAS, se administra en Cloudflare Zero Trust → Networks →
+   Tunnels & Mesh → **`vault`** → Published application routes.
 
-4. **Poner Cloudflare Access delante de `/admin`** — una política que solo
-   deje entrar a tu correo. La contraseña del panel es la segunda cerradura,
-   no la única.
+   Ahí está puesto `licencias.educapanama.net` → `http://127.0.0.1:30263`,
+   igual que `openclaw.educapanama.net` → `:30262`. Nota: cada app de TrueNAS
+   corre en su propia red de Docker, así que `cloudflared` **no** llega al
+   portal por nombre de contenedor — de ahí que el puerto sí se publique en el
+   host y el túnel apunte a `127.0.0.1`.
+
+4. **Cloudflare Access solo sobre `/admin`.** Está creada la aplicación
+   *"Portal de licencias de Lámpara - panel"* con destino
+   `licencias.educapanama.net/admin` y la política *Fernando - dispositivos
+   personales*.
+
+   **El path importa y no es un detalle:** si Access cubriera el dominio
+   entero, `GET /licencias/{id}` quedaría detrás del login y **ninguna iglesia
+   podría renovar su licencia**, porque la app no tiene con qué autenticarse.
+   Comprobado después de crearla: `/salud` y `/licencias/…` siguen devolviendo
+   200, y `/admin` redirige al login.
+
+   Efecto secundario a tener presente: descargar `/admin/prueba.json` con
+   `curl` ya no funciona sin un service token — hay que bajarla desde el
+   navegador, que es lo natural para una persona.
 
 5. **Generar la clave de firma dentro del contenedor**, para que la privada
    nazca en el servidor y no viaje por ningún lado — desde la consola del
@@ -160,13 +176,24 @@ NAS: es publicar la imagen en un registro y apuntar TrueNAS ahí.
    node herramientas/generar-claves.js
    ```
 
-6. **Copiar la clave pública que imprime** a `app/recursos/licencia-clave-publica.pem`
-   en el repo de la app, y volver a empaquetar. Hasta que se haga esto, la app
-   valida contra la clave de desarrollo y **rechazará todo lo que emita el
-   portal** — que es exactamente lo que debe hacer.
+6. **Copiar la clave pública** a `app/recursos/licencia-clave-publica.pem` en
+   el repo de la app. Ya no hace falta transcribirla del terminal: se descarga
+   de `https://licencias.educapanama.net/clave-publica.pem`.
 
-7. **Apuntar la app al portal:** poner la dirección pública en
-   `URL_PORTAL_LICENCIAS` (`app/lib/licencia.js`).
+7. **Rehacer la licencia de prueba del instalador** — se descarga del panel
+   ("Descargar la prueba del instalador") y se guarda como
+   `app/recursos/licencia-prueba.json`. **Esto no es opcional:** la anterior
+   quedó firmada con la clave vieja, y sin rehacerla ninguna instalación nueva
+   podría proyectar.
+
+8. **Apuntar la app al portal:** `URL_PORTAL_LICENCIAS` en
+   `app/lib/licencia.js`. Ya está en `https://licencias.educapanama.net`.
+
+Consecuencia de tener aquí la clave de producción: `probar:licencia` en el repo
+de la app **no puede** emitir nada que la app acepte, porque la privada vive
+solo en este servidor. Por eso esa prueba trabaja con su propio par de claves y
+devuelve el real al terminar. Si alguna vez un empaquetado sale incapaz de
+validar nada, ese es el primer sitio donde mirar.
 
 Para probar el mismo despliegue fuera de TrueNAS (un VPS, por ejemplo) sí sirve
 `docker-compose.yml` tal cual — ahí compone la misma imagen de GHCR con su
