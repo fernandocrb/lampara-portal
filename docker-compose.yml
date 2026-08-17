@@ -1,13 +1,19 @@
-# Despliegue en el TrueNAS. Ver README.md para el paso a paso.
+# Despliegue de referencia (VPS, Docker Compose plano). Ver README.md.
 #
-# El puerto NO se publica hacia la red de casa: lo alcanza el túnel de
-# Cloudflare, que corre en su propio contenedor y ve a este por nombre. Así el
-# portal no queda expuesto en la LAN ni depende de abrir nada en el router.
+# En el TrueNAS real esto NO se usa así: TrueNAS solo jala imágenes ya
+# construidas, no compone Dockerfiles. Ahí el portal se instala como "Custom
+# App" apuntando a esta misma imagen (ghcr.io/.../lampara-portal), y el túnel
+# de Cloudflare es la app `cloudflared` que ya corre en el NAS — no el
+# servicio `tunel` de aquí abajo, que es solo para quien despliegue esto
+# suelto, sin TrueNAS de por medio.
+#
+# El puerto NO se publica hacia la red: solo lo alcanza cloudflared, en la
+# misma red docker. Así el portal no queda expuesto en la LAN ni depende de
+# abrir nada en el router.
 
 services:
   portal:
-    build: .
-    image: lampara-portal:latest
+    image: ghcr.io/fernandocrb/lampara-portal:latest
     container_name: lampara-portal
     restart: unless-stopped
     environment:

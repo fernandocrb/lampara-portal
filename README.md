@@ -121,36 +121,43 @@ carpetas hermanas.
 
 ## Despliegue en el TrueNAS
 
-El portal va detrás de un túnel de Cloudflare: no se abre ningún puerto en el
-router y el NAS no queda expuesto.
+TrueNAS SCALE (Community, la que se usa aquí) instala apps propias como
+**Custom App**, y esa pantalla solo *jala* una imagen ya construida — no
+compila un `Dockerfile`. Por eso el camino no es `docker compose up` en el
+NAS: es publicar la imagen en un registro y apuntar TrueNAS ahí.
 
-1. **Crear el túnel** en Cloudflare Zero Trust → Networks → Tunnels. Apuntar el
-   nombre público (p. ej. `licencias.educapanama.net`) a `http://portal:8099`.
-   Copiar el token.
+1. **La imagen se publica sola.** `.github/workflows/publicar-imagen.yml`
+   construye y sube `ghcr.io/fernandocrb/lampara-portal:latest` en cada push a
+   `main`. El repo es público a propósito — la imagen no lleva ningún secreto,
+   ni la clave de firma ni la contraseña del panel, esas nacen después, en el
+   volumen del propio NAS — así que no hace falta configurar ninguna
+   credencial de registro en TrueNAS para poder jalarla.
 
-2. **Poner Cloudflare Access delante de `/admin`** — una política que solo deje
-   entrar a tu correo. La contraseña del panel es la segunda cerradura, no la
-   única.
+2. **Instalar como Custom App**: Apps → Discover Apps → Custom App.
+   - Repository: `ghcr.io/fernandocrb/lampara-portal`, Tag: `latest`.
+   - Variables de entorno: `LAMPARA_URL_PUBLICA`, `LAMPARA_ADMIN_CLAVE_HASH`
+     (generada con `npm run clave-admin`) y `LAMPARA_TRAS_PROXY=si`.
+   - Storage: un volumen persistente montado en `/datos` — es lo único que
+     hay que respaldar.
+   - Sin puerto publicado al host: el túnel llega al contenedor por la red
+     interna de apps de TrueNAS, no por la LAN.
 
-3. **Crear el `.env`** junto al `docker-compose.yml` (está en `.gitignore`):
+3. **Apuntar el túnel.** El NAS ya tiene la app `cloudflared` corriendo (la
+   misma que usa OpenClaw) con un *tunnel token* — el mapeo de hostnames no se
+   toca ahí, se administra en Cloudflare Zero Trust → Networks → Tunnels →
+   [el túnel] → Public Hostnames: agregar `licencias.educapanama.net` →
+   `http://<nombre-o-IP-del-contenedor-portal>:8099`.
 
-   ```
-   LAMPARA_URL_PUBLICA=https://licencias.educapanama.net
-   LAMPARA_ADMIN_CLAVE_HASH=scrypt$...
-   CLOUDFLARE_TUNNEL_TOKEN=...
-   ```
-
-4. **Levantar:**
-
-   ```bash
-   docker compose up -d --build
-   ```
+4. **Poner Cloudflare Access delante de `/admin`** — una política que solo
+   deje entrar a tu correo. La contraseña del panel es la segunda cerradura,
+   no la única.
 
 5. **Generar la clave de firma dentro del contenedor**, para que la privada
-   nazca en el servidor y no viaje por ningún lado:
+   nazca en el servidor y no viaje por ningún lado — desde la consola del
+   contenedor en TrueNAS (Apps → lampara-portal → ⋮ → Shell):
 
    ```bash
-   docker compose exec portal node herramientas/generar-claves.js
+   node herramientas/generar-claves.js
    ```
 
 6. **Copiar la clave pública que imprime** a `app/recursos/licencia-clave-publica.pem`
@@ -160,6 +167,10 @@ router y el NAS no queda expuesto.
 
 7. **Apuntar la app al portal:** poner la dirección pública en
    `URL_PORTAL_LICENCIAS` (`app/lib/licencia.js`).
+
+Para probar el mismo despliegue fuera de TrueNAS (un VPS, por ejemplo) sí sirve
+`docker-compose.yml` tal cual — ahí compone la misma imagen de GHCR con su
+propio `cloudflared`, sin depender de la app nativa del NAS.
 
 ### Respaldos
 
