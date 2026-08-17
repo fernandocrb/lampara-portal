@@ -32,13 +32,25 @@ const URL_PUBLICA = (process.env.LAMPARA_URL_PUBLICA || 'http://localhost:' + PU
 const CLAVE_ADMIN_HASH = process.env.LAMPARA_ADMIN_CLAVE_HASH || '';
 
 /**
+ * Lee un interruptor de entorno.
+ *
+ * Acepta tanto la forma en español como la que escribiría cualquiera que venga
+ * de Docker: quien configure esto va a poner `true` tarde o temprano, y una
+ * opción de seguridad que se apaga sola por escribirla en otro idioma —sin
+ * error, sin aviso— es una trampa, no una convención.
+ */
+function afirmativo(valor) {
+  return ['si', 'sí', 'true', '1', 'yes'].includes(String(valor || '').trim().toLowerCase());
+}
+
+/**
  * Detrás del túnel de Cloudflare, `remoteAddress` siempre es el túnel: sin esto
  * todas las iglesias comparten IP y el límite de peticiones las castiga juntas.
  * Se activa a mano porque creerle a una cabecera que puede falsificar cualquiera
  * cuando *no* hay un proxy delante sería regalarle a cada visitante la
  * posibilidad de elegir su propia identidad ante el limitador.
  */
-const CONFIAR_EN_PROXY = process.env.LAMPARA_TRAS_PROXY === 'si';
+const CONFIAR_EN_PROXY = afirmativo(process.env.LAMPARA_TRAS_PROXY);
 
 const CUERPO_MAXIMO = 64 * 1024;
 

@@ -1,0 +1,6 @@
+# El script de arranque entra tal cual a una imagen Alpine: con saltos de línea
+# de Windows, /bin/sh falla con un "not found" que no dice de qué. Se desarrolla
+# en Windows, así que conviene dejarlo fijado y no depender de la configuración
+# de git de cada quien.
+*.sh text eol=lf
+Dockerfile text eol=lf

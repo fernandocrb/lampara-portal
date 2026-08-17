@@ -3,24 +3,30 @@
 # que instalar, y tampoco hay compiladores en la imagen que alguien pueda usar.
 FROM node:24-alpine
 
-# La app corre sin privilegios. La imagen de node ya trae este usuario.
+# Lo único que se instala: la utilidad para bajar de privilegios en el arranque
+# (ver arranque.sh). Son ~20 KB y evita que el portal corra como root.
+RUN apk add --no-cache su-exec
+
 WORKDIR /app
 COPY package.json ./
 COPY servidor ./servidor
 COPY herramientas ./herramientas
+COPY arranque.sh /arranque.sh
+RUN chmod +x /arranque.sh
 
 # Los datos (base y clave privada) van en un volumen, nunca en la imagen: al
 # actualizar el portal se reemplaza la imagen entera y la clave tiene que
 # sobrevivir a eso.
 ENV LAMPARA_DATOS=/datos
-RUN mkdir -p /datos && chown -R node:node /datos
+RUN mkdir -p /datos
 VOLUME ["/datos"]
 
-USER node
 ENV PORT=8099
 EXPOSE 8099
 
 HEALTHCHECK --interval=60s --timeout=5s --start-period=10s \
   CMD node -e "fetch('http://127.0.0.1:'+(process.env.PORT||8099)+'/salud').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
 
+# Sin `USER node` fijo: quien monta el volumen decide de quién es. Ver arranque.sh.
+ENTRYPOINT ["/arranque.sh"]
 CMD ["node", "servidor/servidor.js"]
