@@ -358,7 +358,32 @@ async function principal() {
 
   anotar('el número no puede quedar en cero ni en negativo', db.cambiarEquiposPermitidos(otra.id, 0) === 1);
 
-  // --- 13. Descarga manual desde el panel -----------------------------------
+  // --- 13. La prueba que viaja en el instalador ------------------------------
+  // Es el archivo que más veces se va a instalar de todos: si sale mal, ninguna
+  // instalación nueva puede proyectar.
+  const paquete = licencias.emitir({
+    clienteId: licencias.CLIENTE_PRUEBA,
+    nombreCliente: 'Período de prueba',
+    plan: 'prueba',
+    vigenteHasta: new Date(Date.now() + 365 * licencias.MS_DIA).toISOString(),
+    diasPrueba: licencias.DIAS_PRUEBA,
+    topeDeGracia: false,
+  });
+  const diasOferta = Math.round((Date.parse(paquete.datos.validoHasta) - Date.now()) / licencias.MS_DIA);
+  anotar(
+    'la prueba del instalador no queda capada a los 30 días de gracia',
+    diasOferta > 300 && paquete.datos.diasPrueba === 30,
+    'oferta ' + diasOferta + ' días, prueba ' + paquete.datos.diasPrueba
+  );
+
+  const clavePublica = await fetch(base + '/clave-publica.pem');
+  const pem = await clavePublica.text();
+  anotar(
+    'publica su clave pública para no copiarla a mano',
+    clavePublica.status === 200 && pem.includes('BEGIN PUBLIC KEY') && licencias.verificar(paquete.texto, pem).valido
+  );
+
+  // --- 14. Descarga manual desde el panel -----------------------------------
   const manual = await fetch(base + '/admin/iglesias/' + iglesia.id + '/licencia.json', { headers: conSesion });
   anotar(
     'el panel entrega el archivo para enviarlo a mano',

@@ -118,7 +118,19 @@ function calcularValidoHasta(vigenteHasta, ahora = Date.now()) {
  * Firma una licencia.
  * @returns {{texto: string, datos: object}} el archivo listo para entregar.
  */
-function emitir({ clienteId, nombreCliente, estado = 'activo', plan = 'completo', vigenteHasta, diasPrueba, ahora = Date.now() }) {
+function emitir({
+  clienteId,
+  nombreCliente,
+  estado = 'activo',
+  plan = 'completo',
+  vigenteHasta,
+  diasPrueba,
+  ahora = Date.now(),
+  // La licencia que viaja dentro del instalador no se refresca contra nadie
+  // antes de usarse: su fecha es el tope de la oferta, no una ventana de
+  // gracia, así que ahí el tope de 30 días no aplica. Ver herramientas/emitir-prueba.js.
+  topeDeGracia = true,
+}) {
   if (!clienteId) throw new Error('Falta el identificador del cliente.');
   if (!ESTADOS.includes(estado) && !ESTADOS_DINAMICOS.includes(estado)) throw new Error('Estado desconocido: ' + estado);
 
@@ -128,7 +140,7 @@ function emitir({ clienteId, nombreCliente, estado = 'activo', plan = 'completo'
     estado,
     plan,
     emitidaEn: new Date(ahora).toISOString(),
-    validoHasta: calcularValidoHasta(vigenteHasta, ahora),
+    validoHasta: topeDeGracia ? calcularValidoHasta(vigenteHasta, ahora) : new Date(vigenteHasta).toISOString(),
   };
 
   // Solo la prueba que viaja dentro del instalador lleva esto: cuenta desde el

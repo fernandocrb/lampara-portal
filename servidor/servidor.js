@@ -464,6 +464,17 @@ async function manejar(req, res) {
     return res.end(JSON.stringify({ ok: true, iglesias: db.iglesias().length }));
   }
 
+  // La clave con la que la app verifica las licencias. Es pública por
+  // definición —va dentro de cada instalación de Lámpara— y publicarla evita
+  // tener que copiarla a mano del servidor al repo, que con caracteres como
+  // l/I/1 es una forma tonta de romperlo todo en silencio.
+  if (ruta === '/clave-publica.pem') {
+    const pem = licencias.clavePublicaPem();
+    if (!pem) return responder(res, 404, 'Este portal todavía no tiene clave de firma.', { 'Content-Type': 'text/plain; charset=utf-8' });
+    res.writeHead(200, { 'Content-Type': 'application/x-pem-file; charset=utf-8' });
+    return res.end(pem);
+  }
+
   if (ruta.startsWith('/licencias/') && req.method === 'GET') {
     return servirLicencia(req, res, decodeURIComponent(ruta.slice('/licencias/'.length)), url);
   }
