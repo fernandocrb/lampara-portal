@@ -120,7 +120,14 @@ function vistaLista(ses) {
             : `<p class="vacio">Todavía no hay ninguna iglesia dada de alta.</p>`
         }
       </div>
-      <a class="boton" href="/admin/nueva">Dar de alta una iglesia</a>
+      <div class="acciones">
+        <a class="boton" href="/admin/nueva">Dar de alta una iglesia</a>
+        <a class="boton" href="/admin/prueba.json">Descargar la prueba del instalador</a>
+      </div>
+      <p class="pista" style="margin-top:10px">
+        Esa prueba se guarda como <code>app/recursos/licencia-prueba.json</code> en el repo de la app y hay que
+        volver a empaquetar. Es la licencia con la que arranca cada instalación nueva.
+      </p>
       ${pruebasEnCurso()}`,
   });
 }

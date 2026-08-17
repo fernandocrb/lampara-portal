@@ -339,6 +339,26 @@ async function manejarAdmin(req, res, ruta, url) {
     return responder(res, 200, admin.vistaLista(ses));
   }
 
+  // La licencia de prueba que hay que meter dentro del instalador. Va detrás
+  // de la contraseña no porque sea secreta —viaja en cada instalador— sino
+  // porque no tiene por qué estar a mano de cualquiera que pase por la
+  // dirección pública.
+  if (ruta === '/admin/prueba.json') {
+    const { texto } = licencias.emitir({
+      clienteId: licencias.CLIENTE_PRUEBA,
+      nombreCliente: 'Período de prueba',
+      plan: 'prueba',
+      vigenteHasta: new Date(Date.now() + 365 * licencias.MS_DIA).toISOString(),
+      diasPrueba: licencias.DIAS_PRUEBA,
+      topeDeGracia: false,
+    });
+    res.writeHead(200, {
+      'Content-Type': 'application/json; charset=utf-8',
+      'Content-Disposition': 'attachment; filename="licencia-prueba.json"',
+    });
+    return res.end(texto);
+  }
+
   // --- Alta -----------------------------------------------------------------
   if (ruta === '/admin/nueva') {
     if (req.method === 'GET') return responder(res, 200, admin.vistaNueva(ses));
